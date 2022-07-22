@@ -15,18 +15,11 @@ pluginManagement {
 rootProject.name = "anthaathi"
 
 include(
-    ":libs:anthaathi-common-node-bom",
-    ":libs:anthaathi-web-lib",
-    ":libs:anthaathi-form-builder",
-    ":libs:anthaathi-form-baseui",
-    ":libs:anthaathi-json-in-action",
+    ":apps:anthaathi-commerce-mobile-client",
 )
 
 include(
-    ":apps:anthaathi-cms",
-    ":apps:anthaathi-crm",
-    ":apps:anthaathi-cms-web-client",
-    ":apps:anthaathi-crm-web-client"
+    ":apps:anthaathi-graphql-engine"
 )
 
 include(

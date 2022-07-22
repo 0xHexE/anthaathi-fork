@@ -3,6 +3,7 @@ import com.github.gradle.node.yarn.task.YarnTask
 buildscript {
     repositories {
         mavenCentral()
+        mavenLocal()
     }
 }
 
@@ -10,7 +11,12 @@ plugins {
     kotlin("jvm") version Versions.KOTLIN_VERSION
     kotlin("plugin.allopen") version Versions.KOTLIN_VERSION
     id("io.quarkus") apply false
-    id("com.github.node-gradle.node") version "3.2.1"
+    id("com.github.node-gradle.node") version "3.3.0"
+    id("fr.stardustenterprises.rust.wrapper") version "3.2.4" apply false
+
+    id("org.springframework.boot") version "2.7.1" apply false
+    id("io.spring.dependency-management") version "1.0.11.RELEASE" apply false
+    kotlin("plugin.spring") version "1.6.21" apply false
 }
 
 val quarkusPlatformGroupId: String by project
@@ -27,104 +33,44 @@ allprojects {
     }
 }
 
-val quarkusCommonProjects = listOf(
-    // project(":apps:anthaathi-cms"),
-    project(":apps:anthaathi-crm")
+val quarkusCommonProjects = listOf<Project>()
+
+val quarkusWebAppDeps = mapOf<Project, List<Project>>()
+
+// This needs to be calculated in future
+val libraryDeps = mapOf<Project, List<Project>>()
+
+val webClients = listOf<Project>()
+
+val webLibraries = listOf<Project>()
+
+val reactNativeApps = listOf(
+    project(":apps:anthaathi-commerce-mobile-client")
 )
 
-val quarkusWebAppDeps = mapOf(
-    project(":apps:anthaathi-crm") to listOf(
-        project(":apps:anthaathi-crm-web-client")
-    ),
-)
+val kotlinLibraries = listOf<Project>()
 
-// This needs to be calculate in future
-val libraryDeps = mapOf(
-    project(":libs:anthaathi-form-baseui") to listOf(
-        project(":libs:anthaathi-form-builder"),
-        project(":libs:anthaathi-web-lib")
-    ),
-    project(":libs:anthaathi-form-builder") to listOf(
-        project(":libs:anthaathi-json-in-action")
-    )
-)
 
-val webClients = listOf(
-    // project(":apps:anthaathi-cms-web-client"),
-    project(":apps:anthaathi-crm-web-client")
-)
+val springBoot = listOf(project(":apps:anthaathi-graphql-engine"))
 
-val webLibraries = listOf(
-    project(":libs:anthaathi-web-lib"),
-    project(":libs:anthaathi-form-builder"),
-    project(":libs:anthaathi-form-baseui"),
-    project(":libs:anthaathi-json-in-action")
-)
-
-configure(subprojects.filter { it in webLibraries }) {
+configure(subprojects.filter { it in springBoot }) {
     apply {
-        plugin("com.github.node-gradle.node")
+        plugin("org.springframework.boot")
+        plugin("io.spring.dependency-management")
+        plugin("org.jetbrains.kotlin.jvm")
+        plugin("org.jetbrains.kotlin.plugin.spring")
+        plugin("org.springframework.boot")
+        plugin("io.spring.dependency-management")
     }
 
-    tasks.register<YarnTask>("buildLib") {
-        args.set(listOf("build"))
+    java.sourceCompatibility = JavaVersion.VERSION_11
 
-        libraryDeps[this.project]?.forEach { itt ->
-            this.dependsOn.add(itt.tasks.getByName("buildLib"))
-        }
-    }
-
-    tasks.register<YarnTask>("lint") {
-        args.set(listOf("lint"))
-    }
-
-    tasks.register<YarnTask>("test") {
-        args.set(listOf("test", "--coverage", "--coverageReporters=lcov"))
-    }
-
-    tasks.register("check") {
-        dependsOn("lint", "test", "buildLib")
-
-        finalizedBy(project(":tools:node-tooling").tasks.getByName("coverageMerger"))
+    repositories {
+        mavenCentral()
     }
 }
 
-configure(subprojects.filter { it in webClients }) {
-    apply {
-        plugin("com.github.node-gradle.node")
-    }
-
-    tasks.register<YarnTask>("i18nExtract") {
-        args.set(listOf("extract"))
-    }
-
-    tasks.register<YarnTask>("i18nCompile") {
-        args.set(listOf("compile"))
-
-        dependsOn.add("i18nExtract")
-    }
-
-    tasks.register<YarnTask>("runDev") {
-        args.set(listOf("dev"))
-
-        dependsOn.add("i18nCompile")
-
-        webLibraries.forEach {
-            dependsOn.add(it.tasks.find { task -> task.name == "buildLib" })
-        }
-    }
-
-    tasks.register<YarnTask>("buildProd") {
-        args.set(listOf("build"))
-
-        dependsOn.add("i18nCompile")
-
-        webLibraries.forEach {
-            dependsOn.add(it.tasks.find { task -> task.name == "buildLib" })
-        }
-    }
-}
-
+// Quarkus configuration
 configure(subprojects.filter { it in quarkusCommonProjects }) {
     apply {
         plugin("org.jetbrains.kotlin.jvm")
@@ -133,6 +79,8 @@ configure(subprojects.filter { it in quarkusCommonProjects }) {
     }
 
     tasks.register("buildDocker") {
+        // This build the frontend application and move it to the build
+        // folder so one container can have frontend and backend
         if (quarkusWebAppDeps.containsKey(this.project)) {
             val fileProjectPath = File(this.project.projectDir, "src/main/resources/META-INF/resources").toString()
 
@@ -181,5 +129,47 @@ configure(subprojects.filter { it in quarkusCommonProjects }) {
     java {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
+    }
+}
+
+configure(subprojects.filter { it in reactNativeApps }) {
+    apply {
+        plugin("com.github.node-gradle.node")
+    }
+
+    tasks.register<YarnTask>("i18nBuild") {
+        args.set(listOf("i18n"))
+    }
+
+    tasks.register<YarnTask>("relay") {
+        args.set(listOf("relay"))
+    }
+
+    tasks.register<YarnTask>("lint") {
+        args.set(listOf("lint"))
+    }
+
+    tasks.register<YarnTask>("postinstall") {
+        dependsOn("i18nBuild", "relay")
+    }
+
+    tasks.register<YarnTask>("test") {
+        dependsOn("postinstall")
+
+        args.set(listOf("test", "--coverage", "--coverageReporters=lcov"))
+    }
+}
+
+configure(subprojects.filter { it in kotlinLibraries }) {
+    apply {
+        plugin("org.jetbrains.kotlin.jvm")
+        plugin("org.jetbrains.kotlin.plugin.allopen")
+    }
+
+    dependencies {
+        implementation(platform("org.jetbrains.kotlin:kotlin-bom"))
+        implementation("org.jetbrains.kotlin:kotlin-stdlib-jdk8")
+        testImplementation("org.jetbrains.kotlin:kotlin-test")
+        testImplementation("org.jetbrains.kotlin:kotlin-test-junit")
     }
 }
